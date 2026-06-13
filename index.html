@@ -24,8 +24,10 @@
     .marker-pill:hover { transform: scale(1.1); }
     @keyframes slideUp { from { transform: translateY(100%); opacity:0 } to { transform: translateY(0); opacity:1 } }
     @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .slide-up { animation: slideUp 0.25s ease-out; }
     .fade-in { animation: fadeIn 0.15s ease-out; }
+    .spinner { animation: spin 0.8s linear infinite; }
   </style>
 </head>
 <body>
@@ -34,277 +36,16 @@
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
 // ─────────────────────────────────────────────────────────────
-// DATA
-// This mock is structured identically to what Domain's GraphQL
-// and REA's internal REST API actually return — including the
-// _meta fields that are in the JSON payload but not displayed.
-// In production, replace ALL_LISTINGS with live data from your
-// backend (see backend/server.js).
+// CONFIGURATION — set your Railway URL here before deploying
 // ─────────────────────────────────────────────────────────────
-const ALL_LISTINGS = [
-  {
-    id: 'dom-1001', source: 'domain', status: 'active', listingType: 'buy',
-    propertyType: 'House',
-    address: { street: '23 Rowntree St', suburb: 'Balmain', postcode: '2041', display: '23 Rowntree St, Balmain NSW 2041' },
-    coordinates: { lat: -33.8572, lng: 151.1823 },
-    bedrooms: 4, bathrooms: 2, carSpaces: 1, landSize: 310, floorSize: 230,
-    displayPrice: 'Contact Agent',
-    _meta: { priceGuide: { min: 3200000, max: 3500000 }, auctionDate: '2026-07-12T10:30:00', daysOnMarket: 18, views: 1842, enquiries: 23 },
-    agentName: 'James Keenan', agency: 'BresicWhitney Balmain', listingDate: '2026-05-26',
-    features: ['Water views', "Entertainer's deck", "Chef's kitchen", 'Double lock-up garage'],
-    description: 'A stunning federation home offering four bedrooms, soaring ceilings and spectacular harbour glimpses from the upper level. Entertaining is effortless across the wraparound deck overlooking the garden.',
-  },
-  {
-    id: 'dom-1002', source: 'domain', status: 'active', listingType: 'buy',
-    propertyType: 'Terrace',
-    address: { street: '7 Glassop St', suburb: 'Balmain', postcode: '2041', display: '7 Glassop St, Balmain NSW 2041' },
-    coordinates: { lat: -33.8615, lng: 151.1798 },
-    bedrooms: 3, bathrooms: 1, carSpaces: 0, landSize: 165, floorSize: 135,
-    displayPrice: '$1,750,000',
-    _meta: { priceGuide: { min: 1750000, max: 1900000 }, auctionDate: null, daysOnMarket: 32, views: 987, enquiries: 11 },
-    agentName: 'Lucy Harrigan', agency: 'McGrath Balmain', listingDate: '2026-05-12',
-    features: ['Courtyard', 'Polished timber floors', 'Open plan living', 'New kitchen'],
-    description: 'Classic Balmain terrace brimming with original charm, ideally positioned moments from the village and ferry wharf.',
-  },
-  {
-    id: 'rea-2001', source: 'realestate', status: 'active', listingType: 'buy',
-    propertyType: 'Apartment',
-    address: { street: '12/88 Crown St', suburb: 'Surry Hills', postcode: '2010', display: '12/88 Crown St, Surry Hills NSW 2010' },
-    coordinates: { lat: -33.8867, lng: 151.2134 },
-    bedrooms: 2, bathrooms: 2, carSpaces: 1, landSize: null, floorSize: 98,
-    displayPrice: 'Contact Agent',
-    _meta: { priceGuide: { min: 1100000, max: 1250000 }, auctionDate: '2026-07-05T09:00:00', daysOnMarket: 9, views: 2341, enquiries: 34 },
-    agentName: 'Nina Papadopoulos', agency: 'Ray White Surry Hills', listingDate: '2026-06-04',
-    features: ['Rooftop terrace', 'Intercom', 'Internal laundry', 'City views'],
-    description: 'Stylish two-bedroom apartment in the heart of Surry Hills, moments to Crown St dining and Oxford St.',
-  },
-  {
-    id: 'rea-2002', source: 'realestate', status: 'active', listingType: 'buy',
-    propertyType: 'House',
-    address: { street: '44 Edgeware Rd', suburb: 'Newtown', postcode: '2042', display: '44 Edgeware Rd, Newtown NSW 2042' },
-    coordinates: { lat: -33.8979, lng: 151.1802 },
-    bedrooms: 3, bathrooms: 1, carSpaces: 0, landSize: 198, floorSize: 145,
-    displayPrice: 'Contact Agent',
-    _meta: { priceGuide: { min: 1600000, max: 1750000 }, auctionDate: '2026-06-28T11:00:00', daysOnMarket: 14, views: 3201, enquiries: 41 },
-    agentName: 'Tom Brennan', agency: 'Raine & Horne Newtown', listingDate: '2026-05-30',
-    features: ['Victorian terrace', 'Private courtyard', 'Renovated kitchen', 'North facing'],
-    description: 'Exquisitely renovated Victorian terrace in one of Newtown\'s most sought-after streets, walking distance to King St village.',
-  },
-  {
-    id: 'dom-1003', source: 'domain', status: 'sold', listingType: 'buy',
-    propertyType: 'Apartment',
-    address: { street: '5/201 Pyrmont St', suburb: 'Pyrmont', postcode: '2009', display: '5/201 Pyrmont St, Pyrmont NSW 2009' },
-    coordinates: { lat: -33.8703, lng: 151.1953 },
-    bedrooms: 2, bathrooms: 1, carSpaces: 1, landSize: null, floorSize: 82,
-    displayPrice: 'Sold', soldDate: '2026-03-14',
-    _meta: { soldPrice: 1050000, priceGuide: { min: 980000, max: 1050000 }, daysOnMarket: 21, views: 1560 },
-    agentName: 'Marcus Webb', agency: 'McGrath Pyrmont', listingDate: '2026-02-21',
-    features: ['Harbour views', 'Security building', 'Internal laundry', 'Balcony'],
-    description: 'Superb two-bedroom apartment with sweeping harbour views in one of Pyrmont\'s best buildings.',
-  },
-  {
-    id: 'rea-2003', source: 'realestate', status: 'sold', listingType: 'buy',
-    propertyType: 'House',
-    address: { street: '19 Annandale St', suburb: 'Annandale', postcode: '2038', display: '19 Annandale St, Annandale NSW 2038' },
-    coordinates: { lat: -33.8864, lng: 151.1728 },
-    bedrooms: 4, bathrooms: 2, carSpaces: 2, landSize: 418, floorSize: 280,
-    displayPrice: 'Sold', soldDate: '2026-04-22',
-    _meta: { soldPrice: 3850000, priceGuide: { min: 3500000, max: 3800000 }, daysOnMarket: 28, views: 4120 },
-    agentName: 'Claire Donnelly', agency: 'LJ Hooker Annandale', listingDate: '2026-03-25',
-    features: ['Pool', 'Double garage', "Entertainer's garden", 'Period detail'],
-    description: 'Grand Victorian residence on a large block in one of Annandale\'s finest streets. Pool, double garage, and original period features throughout.',
-  },
-  {
-    id: 'dom-1004', source: 'domain', status: 'active', listingType: 'buy',
-    propertyType: 'Terrace',
-    address: { street: '82 Hargrave St', suburb: 'Paddington', postcode: '2021', display: '82 Hargrave St, Paddington NSW 2021' },
-    coordinates: { lat: -33.8849, lng: 151.2294 },
-    bedrooms: 3, bathrooms: 2, carSpaces: 1, landSize: 175, floorSize: 155,
-    displayPrice: 'Contact Agent',
-    _meta: { priceGuide: { min: 2400000, max: 2650000 }, auctionDate: '2026-07-19T10:00:00', daysOnMarket: 5, views: 1100, enquiries: 15 },
-    agentName: 'Sophie Laurent', agency: 'BresicWhitney Paddington', listingDate: '2026-06-08',
-    features: ['Double fronted', 'Rooftop terrace', 'Secure parking', 'Designer renovations'],
-    description: 'A showpiece double-fronted Paddington terrace renovated to an exceptional standard, with a private rooftop terrace commanding panoramic views.',
-  },
-  {
-    id: 'rea-2004', source: 'realestate', status: 'active', listingType: 'buy',
-    propertyType: 'Apartment',
-    address: { street: '301/2 Darling Island Rd', suburb: 'Pyrmont', postcode: '2009', display: '301/2 Darling Island Rd, Pyrmont NSW 2009' },
-    coordinates: { lat: -33.8699, lng: 151.1978 },
-    bedrooms: 3, bathrooms: 2, carSpaces: 2, landSize: null, floorSize: 148,
-    displayPrice: 'Price on Application',
-    _meta: { priceGuide: { min: 2200000, max: 2400000 }, auctionDate: null, daysOnMarket: 44, views: 2780, enquiries: 19 },
-    agentName: 'Daniel Cho', agency: 'CBRE Residential Sydney', listingDate: '2026-04-30',
-    features: ['Water views', 'Concierge', 'Indoor pool', 'Gym', 'Private terrace'],
-    description: 'Luxurious three-bedroom residence in the iconic Jacksons Landing precinct with private terrace, concierge and resort-style amenities.',
-  },
-  {
-    id: 'dom-1005', source: 'domain', status: 'active', listingType: 'buy',
-    propertyType: 'House',
-    address: { street: '11 Evans St', suburb: 'Rozelle', postcode: '2039', display: '11 Evans St, Rozelle NSW 2039' },
-    coordinates: { lat: -33.8617, lng: 151.1632 },
-    bedrooms: 3, bathrooms: 1, carSpaces: 1, landSize: 273, floorSize: 160,
-    displayPrice: '$1,850,000–$1,950,000',
-    _meta: { priceGuide: { min: 1850000, max: 1950000 }, auctionDate: null, daysOnMarket: 22, views: 1340, enquiries: 18 },
-    agentName: 'Pete Andersen', agency: 'Cobden & Hayson Balmain', listingDate: '2026-05-22',
-    features: ['Garage', 'Garden', 'Freshly painted', 'Hardwood floors'],
-    description: 'Sun-drenched worker\'s cottage with generous proportions and a beautiful garden. A rare opportunity to secure a freestanding home in this tightly held pocket of Rozelle.',
-  },
-  {
-    id: 'rea-2005', source: 'realestate', status: 'sold', listingType: 'buy',
-    propertyType: 'Apartment',
-    address: { street: '42/100 Joynton Ave', suburb: 'Waterloo', postcode: '2017', display: '42/100 Joynton Ave, Waterloo NSW 2017' },
-    coordinates: { lat: -33.9018, lng: 151.2078 },
-    bedrooms: 2, bathrooms: 2, carSpaces: 1, landSize: null, floorSize: 91,
-    displayPrice: 'Sold', soldDate: '2026-01-30',
-    _meta: { soldPrice: 875000, priceGuide: { min: 820000, max: 880000 }, daysOnMarket: 17, views: 890 },
-    agentName: 'Amy Nguyen', agency: 'Laing+Simmons Waterloo', listingDate: '2026-01-13',
-    features: ['Pool', 'Gym', 'Rooftop terrace', 'City views'],
-    description: 'Contemporary two-bedroom apartment in the highly sought Green Square precinct with resort facilities.',
-  },
-  {
-    id: 'dom-1006', source: 'domain', status: 'active', listingType: 'buy',
-    propertyType: 'House',
-    address: { street: '55 Livingstone Rd', suburb: 'Marrickville', postcode: '2204', display: '55 Livingstone Rd, Marrickville NSW 2204' },
-    coordinates: { lat: -33.9088, lng: 151.1572 },
-    bedrooms: 4, bathrooms: 2, carSpaces: 2, landSize: 512, floorSize: 220,
-    displayPrice: 'Contact Agent',
-    _meta: { priceGuide: { min: 2100000, max: 2300000 }, auctionDate: '2026-07-26T10:00:00', daysOnMarket: 11, views: 1928, enquiries: 26 },
-    agentName: 'Zoe Papadimitriou', agency: 'McGrath Marrickville', listingDate: '2026-06-02',
-    features: ['Double garage', "Entertainers' deck", 'Original features', 'DA potential'],
-    description: 'A substantial family home on a large 512m² block offering genuine DA potential in one of the Inner West\'s fastest growing suburbs.',
-  },
-  {
-    id: 'rea-2006', source: 'realestate', status: 'active', listingType: 'buy',
-    propertyType: 'Terrace',
-    address: { street: '3 Swanson St', suburb: 'Erskineville', postcode: '2043', display: '3 Swanson St, Erskineville NSW 2043' },
-    coordinates: { lat: -33.9009, lng: 151.1871 },
-    bedrooms: 2, bathrooms: 1, carSpaces: 0, landSize: 130, floorSize: 105,
-    displayPrice: 'From $1,200,000',
-    _meta: { priceGuide: { min: 1200000, max: 1350000 }, auctionDate: null, daysOnMarket: 29, views: 765, enquiries: 9 },
-    agentName: 'Brooke Hamilton', agency: 'Raine & Horne Newtown', listingDate: '2026-05-15',
-    features: ['Rear courtyard', 'High ceilings', 'Timber floors', 'Gas cooking'],
-    description: 'Beautifully preserved terrace in one of Erskineville\'s most charming streets, just moments to the village and train station.',
-  },
-  {
-    id: 'dom-1007', source: 'domain', status: 'sold', listingType: 'buy',
-    propertyType: 'House',
-    address: { street: '28 Johnston St', suburb: 'Leichhardt', postcode: '2040', display: '28 Johnston St, Leichhardt NSW 2040' },
-    coordinates: { lat: -33.8836, lng: 151.1587 },
-    bedrooms: 3, bathrooms: 2, carSpaces: 1, landSize: 302, floorSize: 185,
-    displayPrice: 'Sold', soldDate: '2026-05-08',
-    _meta: { soldPrice: 2250000, priceGuide: { min: 2000000, max: 2200000 }, daysOnMarket: 19, views: 2890 },
-    agentName: 'Victor Manouel', agency: 'Belle Property Leichhardt', listingDate: '2026-04-19',
-    features: ['Parking', 'Deck', 'Renovated', 'Period features'],
-    description: 'Beautifully renovated semi-detached home in a sought-after Leichhardt street, fetching well above guide.',
-  },
-  {
-    id: 'rea-2007', source: 'realestate', status: 'active', listingType: 'buy',
-    propertyType: 'Apartment',
-    address: { street: '22/15 Darling St', suburb: 'Glebe', postcode: '2037', display: '22/15 Darling St, Glebe NSW 2037' },
-    coordinates: { lat: -33.8798, lng: 151.1866 },
-    bedrooms: 1, bathrooms: 1, carSpaces: 0, landSize: null, floorSize: 58,
-    displayPrice: '$720,000',
-    _meta: { priceGuide: { min: 680000, max: 740000 }, auctionDate: null, daysOnMarket: 38, views: 612, enquiries: 7 },
-    agentName: 'Jason Lim', agency: 'Laing+Simmons Glebe', listingDate: '2026-05-06',
-    features: ['Balcony', 'Security parking', 'Intercom', 'Top floor'],
-    description: 'Top floor one-bedder with excellent storage and a sunny north-facing balcony in a quiet boutique block.',
-  },
-  {
-    id: 'dom-1008', source: 'domain', status: 'active', listingType: 'buy',
-    propertyType: 'House',
-    address: { street: '102 Redfern St', suburb: 'Redfern', postcode: '2016', display: '102 Redfern St, Redfern NSW 2016' },
-    coordinates: { lat: -33.8928, lng: 151.2062 },
-    bedrooms: 3, bathrooms: 1, carSpaces: 0, landSize: 155, floorSize: 130,
-    displayPrice: 'Contact Agent',
-    _meta: { priceGuide: { min: 1650000, max: 1800000 }, auctionDate: '2026-07-05T09:30:00', daysOnMarket: 7, views: 2100, enquiries: 29 },
-    agentName: 'Karen Elias', agency: 'BresicWhitney Redfern', listingDate: '2026-06-06',
-    features: ['Terrace', 'High ceilings', 'Original fireplaces', 'Lane access'],
-    description: 'Charming three-bedroom terrace with original fireplaces and beautiful period detail in rapidly evolving Redfern.',
-  },
-  {
-    id: 'rea-2008', source: 'realestate', status: 'sold', listingType: 'buy',
-    propertyType: 'Terrace',
-    address: { street: '17 Shepherd St', suburb: 'Chippendale', postcode: '2008', display: '17 Shepherd St, Chippendale NSW 2008' },
-    coordinates: { lat: -33.8891, lng: 151.1994 },
-    bedrooms: 2, bathrooms: 1, carSpaces: 0, landSize: 110, floorSize: 95,
-    displayPrice: 'Sold', soldDate: '2026-02-14',
-    _meta: { soldPrice: 1380000, priceGuide: { min: 1250000, max: 1380000 }, daysOnMarket: 24, views: 1340 },
-    agentName: 'Wei Zhang', agency: 'Richardson & Wrench Newtown', listingDate: '2026-01-21',
-    features: ['Renovated', 'Courtyard', 'Period detail'],
-    description: 'Impeccably renovated terrace in highly sought Chippendale — sold $130k above top of guide.',
-  },
-  {
-    id: 'dom-1009', source: 'domain', status: 'active', listingType: 'buy',
-    propertyType: 'Apartment',
-    address: { street: '8/455 Crown St', suburb: 'Surry Hills', postcode: '2010', display: '8/455 Crown St, Surry Hills NSW 2010' },
-    coordinates: { lat: -33.8923, lng: 151.2106 },
-    bedrooms: 2, bathrooms: 1, carSpaces: 0, landSize: null, floorSize: 75,
-    displayPrice: 'Contact Agent',
-    _meta: { priceGuide: { min: 880000, max: 960000 }, auctionDate: '2026-06-28T10:00:00', daysOnMarket: 13, views: 1456, enquiries: 20 },
-    agentName: 'Oliver Grant', agency: 'Ray White Surry Hills', listingDate: '2026-05-31',
-    features: ['Balcony', 'Art deco building', 'Original parquetry', 'Walk to Oxford St'],
-    description: 'Charming art deco apartment with original parquetry floors and a sunny north-facing balcony in a landmark building.',
-  },
-  {
-    id: 'rea-2009', source: 'realestate', status: 'sold', listingType: 'buy',
-    propertyType: 'House',
-    address: { street: '63 Corunna Rd', suburb: 'St Peters', postcode: '2044', display: '63 Corunna Rd, St Peters NSW 2044' },
-    coordinates: { lat: -33.9142, lng: 151.1822 },
-    bedrooms: 3, bathrooms: 2, carSpaces: 1, landSize: 376, floorSize: 195,
-    displayPrice: 'Sold', soldDate: '2026-04-03',
-    _meta: { soldPrice: 1920000, priceGuide: { min: 1750000, max: 1900000 }, daysOnMarket: 31, views: 2210 },
-    agentName: 'Alex Stamos', agency: 'McGrath Newtown', listingDate: '2026-03-03',
-    features: ['Renovated', 'Garden', 'Carport', 'Workshop'],
-    description: 'Charming cottage-style home with contemporary renovations on a generous 376m² block in rapidly evolving St Peters.',
-  },
-  {
-    id: 'dom-1010', source: 'domain', status: 'active', listingType: 'buy',
-    propertyType: 'Apartment',
-    address: { street: '1502/22 Darling Dr', suburb: 'Darling Harbour', postcode: '2000', display: '1502/22 Darling Drive, Darling Harbour NSW 2000' },
-    coordinates: { lat: -33.8728, lng: 151.2012 },
-    bedrooms: 2, bathrooms: 2, carSpaces: 1, landSize: null, floorSize: 104,
-    displayPrice: 'Price on Application',
-    _meta: { priceGuide: { min: 1800000, max: 2100000 }, auctionDate: null, daysOnMarket: 52, views: 3890, enquiries: 31 },
-    agentName: 'Michelle Park', agency: 'Knight Frank Sydney', listingDate: '2026-04-22',
-    features: ['Harbour views', 'Concierge', 'Pool', 'Spa', 'Private balcony', 'High floor'],
-    description: 'Spectacular sub-penthouse with panoramic harbour views. Featuring floor-to-ceiling glass, concierge, pool and spa in one of Sydney\'s premier addresses.',
-  },
-  {
-    id: 'dom-1011', source: 'domain', status: 'active', listingType: 'buy',
-    propertyType: 'House',
-    address: { street: '7 Hall St', suburb: 'Glebe', postcode: '2037', display: '7 Hall St, Glebe NSW 2037' },
-    coordinates: { lat: -33.8821, lng: 151.1885 },
-    bedrooms: 5, bathrooms: 3, carSpaces: 2, landSize: 520, floorSize: 340,
-    displayPrice: 'Contact Agent',
-    _meta: { priceGuide: { min: 4200000, max: 4600000 }, auctionDate: '2026-08-02T10:00:00', daysOnMarket: 3, views: 2650, enquiries: 37 },
-    agentName: 'Ben Collier', agency: 'The Agency Inner City', listingDate: '2026-06-10',
-    features: ['Pool', 'Triple garage', 'Wine cellar', 'Home theatre', 'Harbour views'],
-    description: 'One of Glebe\'s finest family residences. This architectural masterpiece offers five bedrooms, a pool, wine cellar and panoramic harbour views over a commanding 520m² landholding.',
-  },
-  {
-    id: 'rea-2010', source: 'realestate', status: 'active', listingType: 'buy',
-    propertyType: 'Apartment',
-    address: { street: '14/23 O\'Brien St', suburb: 'Surry Hills', postcode: '2010', display: '14/23 O\'Brien St, Surry Hills NSW 2010' },
-    coordinates: { lat: -33.8901, lng: 151.2090 },
-    bedrooms: 1, bathrooms: 1, carSpaces: 0, landSize: null, floorSize: 52,
-    displayPrice: '$649,000',
-    _meta: { priceGuide: { min: 620000, max: 670000 }, auctionDate: null, daysOnMarket: 47, views: 534, enquiries: 6 },
-    agentName: 'Tara Flynn', agency: 'Raine & Horne Surry Hills', listingDate: '2026-04-27',
-    features: ['Internal laundry', 'Built-in robes', 'Quiet position', 'Close to transport'],
-    description: 'Neat and tidy one-bedroom apartment in a quiet boutique block, well positioned for city access.',
-  },
-];
+const BACKEND_URL = null; // e.g. 'https://propfind-backend.up.railway.app'
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────
 const SOURCE_COLOR = { domain: '#1a56db', realestate: '#dc2626' };
 const SOURCE_LABEL = { domain: 'Domain', realestate: 'REA' };
-const POSTCODES = [...new Set(ALL_LISTINGS.map(l => l.address.postcode))].sort();
-const PROPERTY_TYPES = [...new Set(ALL_LISTINGS.map(l => l.propertyType))].sort();
 const TWELVE_MONTHS_AGO = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
-
 const PROP_EMOJI = { House: '🏡', Apartment: '🏢', Terrace: '🏘', Unit: '🏢', Townhouse: '🏘' };
 
 // ─────────────────────────────────────────────────────────────
@@ -323,6 +64,41 @@ const fmtRange = (min, max) => {
 const fmtDate = (d, opts = {}) => new Date(d).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', ...opts });
 
 // ─────────────────────────────────────────────────────────────
+// FILTERING
+// ─────────────────────────────────────────────────────────────
+const INIT_FILTERS = {
+  listingType: 'buy',
+  postcodes: [],
+  propertyTypes: [],
+  priceMin: '',
+  priceMax: '',
+  bedrooms: 0,
+  bathrooms: 0,
+  carSpaces: 0,
+  landSizeMin: '',
+  landSizeMax: '',
+};
+
+const applyFilters = (listings, f) => listings.filter(l => {
+  if (f.listingType === 'buy' && (l.status !== 'active' || l.listingType !== 'buy')) return false;
+  if (f.listingType === 'sold') {
+    if (l.status !== 'sold') return false;
+    if (new Date(l.soldDate) < TWELVE_MONTHS_AGO) return false;
+  }
+  if (f.postcodes.length && !f.postcodes.includes(l.address.postcode)) return false;
+  if (f.propertyTypes.length && !f.propertyTypes.includes(l.propertyType)) return false;
+  const pricePt = l._meta.soldPrice || l._meta.priceGuide?.min;
+  if (f.priceMin && pricePt && pricePt < +f.priceMin) return false;
+  if (f.priceMax && pricePt && pricePt > +f.priceMax) return false;
+  if (f.bedrooms > 0 && l.bedrooms < f.bedrooms) return false;
+  if (f.bathrooms > 0 && l.bathrooms < f.bathrooms) return false;
+  if (f.carSpaces > 0 && l.carSpaces < f.carSpaces) return false;
+  if (f.landSizeMin && l.landSize && l.landSize < +f.landSizeMin) return false;
+  if (f.landSizeMax && l.landSize && l.landSize > +f.landSizeMax) return false;
+  return true;
+});
+
+// ─────────────────────────────────────────────────────────────
 // MAP MARKER ICONS
 // ─────────────────────────────────────────────────────────────
 const makeIcon = (listing, selected) => {
@@ -333,14 +109,13 @@ const makeIcon = (listing, selected) => {
   const pg = listing._meta.priceGuide;
   const label = sp ? fmt(sp) : pg ? fmt(pg.min) + '+' : '?';
   const size = selected ? 14 : 11;
-  const zOffset = selected ? 1000 : 0;
 
   return L.divIcon({
     className: '',
     html: `<div class="marker-pill" style="background:${bg};color:white;padding:3px 8px;border-radius:10px;font-size:${size}px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.5);border:1.5px solid ${border};font-family:system-ui,sans-serif;cursor:pointer;letter-spacing:-0.2px">${label}</div>`,
     iconSize: null,
     iconAnchor: [0, 12],
-    zIndexOffset: zOffset,
+    zIndexOffset: selected ? 1000 : 0,
   });
 };
 
@@ -387,9 +162,9 @@ const MapView = ({ listings, selectedId, onSelect }) => {
 
   useEffect(() => {
     if (!mapRef.current || !selectedId) return;
-    const l = ALL_LISTINGS.find(x => x.id === selectedId);
+    const l = listings.find(x => x.id === selectedId);
     if (l) mapRef.current.panTo([l.coordinates.lat, l.coordinates.lng], { animate: true, duration: 0.4 });
-  }, [selectedId]);
+  }, [selectedId, listings]);
 
   return <div ref={containerRef} style={{ height: '100%', width: '100%' }} />;
 };
@@ -410,7 +185,6 @@ const Card = ({ listing: l, selected, onClick }) => {
       marginBottom: 10, transition: 'border-color 0.15s, background 0.15s',
       boxShadow: selected ? '0 0 0 1px #3b82f6, 0 4px 20px rgba(59,130,246,0.15)' : 'none',
     }}>
-      {/* Image slot */}
       <div style={{ height: 130, background: 'linear-gradient(135deg, #1f2937 0%, #111827 100%)', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <span style={{ fontSize: 52, opacity: 0.12 }}>{PROP_EMOJI[l.propertyType] || '🏠'}</span>
         <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 5 }}>
@@ -421,8 +195,6 @@ const Card = ({ listing: l, selected, onClick }) => {
         {l._meta.auctionDate && <span style={{ position: 'absolute', bottom: 8, right: 8, background: '#5b21b6', color: 'white', fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20 }}>🔨 {fmtDate(l._meta.auctionDate)}</span>}
         {l._meta.daysOnMarket <= 7 && !sp && <span style={{ position: 'absolute', bottom: 8, left: 8, background: '#0369a1', color: 'white', fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20 }}>NEW</span>}
       </div>
-
-      {/* Body */}
       <div style={{ padding: '10px 12px 12px' }}>
         <p style={{ color: '#9ca3af', fontSize: 12, marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.address.display}</p>
         <div style={{ marginBottom: 8 }}>
@@ -461,12 +233,9 @@ const Detail = ({ listing: l, onClose }) => {
   return (
     <div className="fade-in" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       <div className="slide-up scroll" onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 520, maxHeight: '88vh', overflowY: 'auto', background: '#111827', borderRadius: '20px 20px 0 0', borderTop: '1px solid #1f2937' }}>
-        {/* Handle */}
         <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 12 }}>
           <div style={{ width: 36, height: 4, background: '#374151', borderRadius: 2 }} />
         </div>
-
-        {/* Header */}
         <div style={{ padding: '12px 20px 16px', borderBottom: '1px solid #1f2937' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ flex: 1, paddingRight: 12 }}>
@@ -480,24 +249,20 @@ const Detail = ({ listing: l, onClose }) => {
             <button onClick={onClose} style={{ background: '#1f2937', border: 'none', color: '#9ca3af', width: 32, height: 32, borderRadius: '50%', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
           </div>
         </div>
-
         <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Price block */}
           <div style={{ background: '#0d1117', borderRadius: 14, padding: 16, border: '1px solid #1f2937' }}>
             <div style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Price Information</div>
             <div style={{ fontSize: 26, fontWeight: 800, color: sp ? '#fb923c' : '#f9fafb', marginBottom: 4 }}>
               {sp ? fmt(sp) : l.displayPrice}
             </div>
             {sp && <div style={{ color: '#9ca3af', fontSize: 13 }}>Sold {new Date(l.soldDate).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>}
-
             {pg && (
               <div style={{ marginTop: 12, background: '#022c22', border: '1px solid #064e3b', borderRadius: 10, padding: 12 }}>
                 <div style={{ color: '#34d399', fontSize: 11, fontWeight: 700, marginBottom: 4, letterSpacing: 0.5 }}>🔍 EXTRACTED PRICE GUIDE — from raw API payload</div>
                 <div style={{ color: '#6ee7b7', fontSize: 22, fontWeight: 800 }}>{fmtRange(pg.min, pg.max)}</div>
-                <div style={{ color: '#065f46', fontSize: 11, marginTop: 4 }}>This field is present in the API JSON response but suppressed on the listing page</div>
+                <div style={{ color: '#065f46', fontSize: 11, marginTop: 4 }}>Present in the API JSON response but suppressed on the listing page</div>
               </div>
             )}
-
             {l._meta.auctionDate && (
               <div style={{ marginTop: 10, background: '#1e1b4b', border: '1px solid #3730a3', borderRadius: 10, padding: 12 }}>
                 <div style={{ color: '#a5b4fc', fontSize: 11, fontWeight: 700, marginBottom: 4 }}>🔨 AUCTION</div>
@@ -506,8 +271,6 @@ const Detail = ({ listing: l, onClose }) => {
               </div>
             )}
           </div>
-
-          {/* Specs grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
             {[
               l.bedrooms && { icon: '🛏', label: 'Beds', value: l.bedrooms },
@@ -524,8 +287,6 @@ const Detail = ({ listing: l, onClose }) => {
               </div>
             ))}
           </div>
-
-          {/* Analytics */}
           <div style={{ background: '#0d1117', borderRadius: 14, padding: 16, border: '1px solid #1f2937' }}>
             <div style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>Listing Analytics — API metadata</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, textAlign: 'center' }}>
@@ -534,15 +295,13 @@ const Detail = ({ listing: l, onClose }) => {
               {l._meta.enquiries ? <div><div style={{ color: 'white', fontWeight: 700, fontSize: 18 }}>{l._meta.enquiries}</div><div style={{ color: '#6b7280', fontSize: 11 }}>Enquiries</div></div> : <div />}
             </div>
           </div>
-
-          {/* Description */}
-          <div>
-            <div style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>About</div>
-            <p style={{ color: '#d1d5db', fontSize: 14, lineHeight: 1.6, margin: 0 }}>{l.description}</p>
-          </div>
-
-          {/* Features */}
-          {l.features.length > 0 && (
+          {l.description && (
+            <div>
+              <div style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>About</div>
+              <p style={{ color: '#d1d5db', fontSize: 14, lineHeight: 1.6, margin: 0 }}>{l.description}</p>
+            </div>
+          )}
+          {l.features?.length > 0 && (
             <div>
               <div style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Features</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -550,8 +309,6 @@ const Detail = ({ listing: l, onClose }) => {
               </div>
             </div>
           )}
-
-          {/* Agent */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#1f2937', borderRadius: 12, padding: 14 }}>
             <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#374151', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>👤</div>
             <div>
@@ -568,27 +325,6 @@ const Detail = ({ listing: l, onClose }) => {
 // ─────────────────────────────────────────────────────────────
 // FILTER PANEL
 // ─────────────────────────────────────────────────────────────
-const INIT_FILTERS = { listingType: 'buy', postcodes: [], propertyTypes: [], priceMin: '', priceMax: '', bedrooms: 0, bathrooms: 0, carSpaces: 0, landSizeMin: '', landSizeMax: '' };
-
-const applyFilters = (listings, f) => listings.filter(l => {
-  if (f.listingType === 'buy' && (l.status !== 'active' || l.listingType !== 'buy')) return false;
-  if (f.listingType === 'sold') {
-    if (l.status !== 'sold') return false;
-    if (new Date(l.soldDate) < TWELVE_MONTHS_AGO) return false;
-  }
-  if (f.postcodes.length && !f.postcodes.includes(l.address.postcode)) return false;
-  if (f.propertyTypes.length && !f.propertyTypes.includes(l.propertyType)) return false;
-  const pricePt = l._meta.soldPrice || l._meta.priceGuide?.min;
-  if (f.priceMin && pricePt && pricePt < +f.priceMin) return false;
-  if (f.priceMax && pricePt && pricePt > +f.priceMax) return false;
-  if (f.bedrooms > 0 && l.bedrooms < f.bedrooms) return false;
-  if (f.bathrooms > 0 && l.bathrooms < f.bathrooms) return false;
-  if (f.carSpaces > 0 && l.carSpaces < f.carSpaces) return false;
-  if (f.landSizeMin && l.landSize && l.landSize < +f.landSizeMin) return false;
-  if (f.landSizeMax && l.landSize && l.landSize > +f.landSizeMax) return false;
-  return true;
-});
-
 const Btn = ({ active, onClick, children, style = {} }) => (
   <button onClick={onClick} style={{ padding: '6px 14px', borderRadius: 20, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, background: active ? '#2563eb' : '#1f2937', color: active ? 'white' : '#9ca3af', transition: 'all 0.15s', ...style }}>{children}</button>
 );
@@ -598,11 +334,15 @@ const Input = ({ placeholder, value, onChange }) => (
     style={{ flex: 1, background: '#1f2937', border: '1px solid #374151', borderRadius: 10, padding: '8px 12px', color: 'white', fontSize: 13, outline: 'none', minWidth: 0 }} />
 );
 
-const FilterPanel = ({ filters, onApply, onClose }) => {
+const FilterPanel = ({ filters, onApply, onClose, allListings }) => {
   const [f, setF] = useState(filters);
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
   const toggle = (k, v) => setF(p => ({ ...p, [k]: p[k].includes(v) ? p[k].filter(x => x !== v) : [...p[k], v] }));
-  const count = applyFilters(ALL_LISTINGS, f).length;
+  const count = applyFilters(allListings, f).length;
+
+  // Derive filter options from live data
+  const postcodes = [...new Set(allListings.map(l => l.address.postcode))].sort();
+  const propertyTypes = [...new Set(allListings.map(l => l.propertyType))].sort();
 
   return (
     <div className="fade-in" onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'flex-end' }}>
@@ -613,7 +353,6 @@ const FilterPanel = ({ filters, onApply, onClose }) => {
           <button onClick={onClose} style={{ background: '#1f2937', border: 'none', color: '#9ca3af', width: 32, height: 32, borderRadius: '50%', cursor: 'pointer', fontSize: 18 }}>✕</button>
         </div>
 
-        {/* Type */}
         <div>
           <div style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Listing Type</div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -622,23 +361,24 @@ const FilterPanel = ({ filters, onApply, onClose }) => {
           </div>
         </div>
 
-        {/* Postcode */}
-        <div>
-          <div style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Postcode</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {POSTCODES.map(pc => <Btn key={pc} active={f.postcodes.includes(pc)} onClick={() => toggle('postcodes', pc)}>{pc}</Btn>)}
+        {postcodes.length > 0 && (
+          <div>
+            <div style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Postcode</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {postcodes.map(pc => <Btn key={pc} active={f.postcodes.includes(pc)} onClick={() => toggle('postcodes', pc)}>{pc}</Btn>)}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Property type */}
-        <div>
-          <div style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Property Type</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {PROPERTY_TYPES.map(t => <Btn key={t} active={f.propertyTypes.includes(t)} onClick={() => toggle('propertyTypes', t)}>{t}</Btn>)}
+        {propertyTypes.length > 0 && (
+          <div>
+            <div style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Property Type</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {propertyTypes.map(t => <Btn key={t} active={f.propertyTypes.includes(t)} onClick={() => toggle('propertyTypes', t)}>{t}</Btn>)}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Price */}
         <div>
           <div style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Price Range</div>
           <div style={{ display: 'flex', gap: 10 }}>
@@ -647,7 +387,6 @@ const FilterPanel = ({ filters, onApply, onClose }) => {
           </div>
         </div>
 
-        {/* Beds */}
         <div>
           <div style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Bedrooms (min)</div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -655,7 +394,6 @@ const FilterPanel = ({ filters, onApply, onClose }) => {
           </div>
         </div>
 
-        {/* Baths */}
         <div>
           <div style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Bathrooms (min)</div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -663,7 +401,6 @@ const FilterPanel = ({ filters, onApply, onClose }) => {
           </div>
         </div>
 
-        {/* Cars */}
         <div>
           <div style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Car Spaces (min)</div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -671,7 +408,6 @@ const FilterPanel = ({ filters, onApply, onClose }) => {
           </div>
         </div>
 
-        {/* Land */}
         <div>
           <div style={{ color: '#6b7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Land Size (m²)</div>
           <div style={{ display: 'flex', gap: 10 }}>
@@ -680,7 +416,6 @@ const FilterPanel = ({ filters, onApply, onClose }) => {
           </div>
         </div>
 
-        {/* Actions */}
         <div style={{ display: 'flex', gap: 10, paddingBottom: 8 }}>
           <button onClick={() => { onApply(f); onClose(); }} style={{ flex: 1, padding: '14px 0', background: '#2563eb', border: 'none', borderRadius: 12, color: 'white', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
             Show {count} result{count !== 1 ? 's' : ''}
@@ -695,16 +430,84 @@ const FilterPanel = ({ filters, onApply, onClose }) => {
 };
 
 // ─────────────────────────────────────────────────────────────
+// LOADING SCREEN
+// ─────────────────────────────────────────────────────────────
+const LoadingScreen = () => (
+  <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#030712', gap: 20 }}>
+    <div style={{ color: '#60a5fa', fontWeight: 800, fontSize: 28, letterSpacing: -0.5 }}>PropFind</div>
+    <div className="spinner" style={{ width: 36, height: 36, border: '3px solid #1f2937', borderTopColor: '#3b82f6', borderRadius: '50%' }} />
+    <div style={{ color: '#4b5563', fontSize: 14 }}>Loading listings…</div>
+  </div>
+);
+
+// ─────────────────────────────────────────────────────────────
+// ERROR SCREEN
+// ─────────────────────────────────────────────────────────────
+const ErrorScreen = ({ onRetry }) => (
+  <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#030712', gap: 16, padding: 32 }}>
+    <div style={{ color: '#60a5fa', fontWeight: 800, fontSize: 28, letterSpacing: -0.5, marginBottom: 8 }}>PropFind</div>
+    <div style={{ fontSize: 40 }}>⚠️</div>
+    <div style={{ color: 'white', fontWeight: 700, fontSize: 18 }}>Couldn't connect to backend</div>
+    {!BACKEND_URL ? (
+      <div style={{ background: '#111827', border: '1px solid #374151', borderRadius: 12, padding: 20, maxWidth: 420, width: '100%' }}>
+        <div style={{ color: '#f87171', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>BACKEND_URL is not set</div>
+        <div style={{ color: '#9ca3af', fontSize: 13, lineHeight: 1.6 }}>
+          Open <code style={{ background: '#1f2937', padding: '1px 5px', borderRadius: 4, color: '#60a5fa' }}>index.html</code> and update line 41:
+        </div>
+        <div style={{ background: '#0d1117', borderRadius: 8, padding: 12, marginTop: 10, fontFamily: 'monospace', fontSize: 12, color: '#34d399' }}>
+          const BACKEND_URL = 'https://your-railway-url.up.railway.app';
+        </div>
+      </div>
+    ) : (
+      <div style={{ background: '#111827', border: '1px solid #374151', borderRadius: 12, padding: 20, maxWidth: 420, width: '100%' }}>
+        <div style={{ color: '#f87171', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Failed to reach backend</div>
+        <div style={{ color: '#6b7280', fontSize: 12, fontFamily: 'monospace', marginBottom: 12, wordBreak: 'break-all' }}>{BACKEND_URL}</div>
+        <div style={{ color: '#9ca3af', fontSize: 13, lineHeight: 1.6 }}>Check that your Railway service is running and the URL is correct. Check the Railway logs for errors.</div>
+      </div>
+    )}
+    {BACKEND_URL && (
+      <button onClick={onRetry} style={{ marginTop: 8, padding: '12px 28px', background: '#2563eb', border: 'none', borderRadius: 12, color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+        Retry
+      </button>
+    )}
+  </div>
+);
+
+// ─────────────────────────────────────────────────────────────
 // APP
 // ─────────────────────────────────────────────────────────────
 const App = () => {
+  const [allListings, setAllListings] = useState([]);
+  const [status, setStatus] = useState('loading'); // 'loading' | 'live' | 'error'
   const [filters, setFilters] = useState(INIT_FILTERS);
   const [selectedId, setSelectedId] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
   const [listVisible, setListVisible] = useState(true);
   const listRef = useRef(null);
 
-  const listings = useMemo(() => applyFilters(ALL_LISTINGS, filters), [filters]);
+  const fetchAll = useCallback(async () => {
+    if (!BACKEND_URL) { setStatus('error'); return; }
+    setStatus('loading');
+    try {
+      const [buyRes, soldRes] = await Promise.all([
+        fetch(`${BACKEND_URL}/api/listings?listingType=buy`),
+        fetch(`${BACKEND_URL}/api/listings?listingType=sold`),
+      ]);
+      if (!buyRes.ok || !soldRes.ok) throw new Error('Bad response from backend');
+      const [buyData, soldData] = await Promise.all([buyRes.json(), soldRes.json()]);
+      const combined = [...(buyData.listings || []), ...(soldData.listings || [])];
+      if (combined.length === 0) throw new Error('No listings returned');
+      setAllListings(combined);
+      setStatus('live');
+    } catch (err) {
+      console.error('PropFind fetch error:', err.message);
+      setStatus('error');
+    }
+  }, []);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const listings = useMemo(() => applyFilters(allListings, filters), [allListings, filters]);
 
   const handleSelect = useCallback(l => {
     setSelectedId(p => p === l.id ? null : l.id);
@@ -720,13 +523,19 @@ const App = () => {
     return v !== '';
   }).length;
 
+  if (status === 'loading') return <LoadingScreen />;
+  if (status === 'error') return <ErrorScreen onRetry={fetchAll} />;
+
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#030712', overflow: 'hidden' }}>
       {/* Header */}
       <div style={{ background: '#0d1117', borderBottom: '1px solid #1f2937', padding: '10px 14px', flexShrink: 0, zIndex: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
           <div style={{ flex: 1 }}>
-            <div style={{ color: '#60a5fa', fontWeight: 800, fontSize: 20, letterSpacing: -0.5 }}>PropFind</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ color: '#60a5fa', fontWeight: 800, fontSize: 20, letterSpacing: -0.5 }}>PropFind</div>
+              <span style={{ background: '#064e3b', border: '1px solid #065f46', color: '#34d399', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 10, letterSpacing: 0.5 }}>LIVE</span>
+            </div>
             <div style={{ color: '#4b5563', fontSize: 11, marginTop: 1 }}>Sydney Inner City & West</div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -738,8 +547,6 @@ const App = () => {
             </button>
           </div>
         </div>
-
-        {/* Type tabs + count */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ display: 'flex', background: '#1f2937', borderRadius: 10, padding: 3, gap: 2 }}>
             {[['buy', 'For Sale'], ['sold', 'Sold (12mo)']].map(([v, label]) => (
@@ -754,12 +561,9 @@ const App = () => {
 
       {/* Body */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        {/* Map always in background */}
         <div style={{ position: 'absolute', inset: 0 }}>
           <MapView listings={listings} selectedId={selectedId} onSelect={handleSelect} />
         </div>
-
-        {/* List panel */}
         {listVisible && (
           <div ref={listRef} className="scroll" style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '100%', maxWidth: 380, background: 'rgba(3,7,18,0.97)', borderLeft: '1px solid #1f2937', overflowY: 'auto', padding: 12, zIndex: 5 }}>
             {listings.length === 0
@@ -770,7 +574,7 @@ const App = () => {
         )}
       </div>
 
-      {showFilters && <FilterPanel filters={filters} onApply={f => { setFilters(f); }} onClose={() => setShowFilters(false)} />}
+      {showFilters && <FilterPanel filters={filters} onApply={f => setFilters(f)} onClose={() => setShowFilters(false)} allListings={allListings} />}
       {selected && <Detail listing={selected} onClose={() => setSelectedId(null)} />}
     </div>
   );
